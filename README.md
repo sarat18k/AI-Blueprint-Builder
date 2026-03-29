@@ -157,23 +157,3 @@ A2A-startup-builder/
 
 ---
 
-## Model Tiers
-
-| | Standard | Premium |
-|---|---|---|
-| Market Research | Perplexity Sonar Pro | Perplexity Sonar Pro |
-| Competitor Analysis | Claude Sonnet 4 | Claude Opus 4 |
-| Product Requirements | Claude Sonnet 4 | Claude Opus 4 |
-| System Architecture | Claude Sonnet 4 | Claude Sonnet 4 |
-| MVP Code | Claude Sonnet 4 | Claude Sonnet 4 |
-| GTM Strategy | GPT-4.1 | GPT-4.1 |
-| Pitch Deck | Gemini 2.5 Flash | Gemini 2.5 Pro |
-| Documents | Local | Local |
-
-Switch tiers without restarting the server — the tier button in the UI updates all agents instantly.
-
----
-
-## License
-
-[MIT](LICENSE)
