@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>History - A2A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="/" class="nav-brand">A2A</a>
+  <a href="/" class="nav-link">New Run</a>
+</nav>
+
+<div class="container">
+  <div class="history-page">
+    <h1>Run History</h1>
+
+    <div id="listView">
+      <ul class="history-list" id="historyList"></ul>
+      <p class="history-empty" id="emptyMsg" style="display:none;">No runs yet. Start your first one.</p>
+    </div>
+
+    <div id="detailView" style="display:none;">
+      <a class="back-link" onclick="showList()">&larr; Back to history</a>
+      <h1 id="detailTask"></h1>
+      <p class="history-item-date" id="detailDate"></p>
+      <div id="detailResults"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">&copy; 2026 Agent to Agent. All rights reserved.</footer>
+
+<script src="/static/format.js"></script>
+<script>
+async function loadHistory() {
+  const list = document.getElementById('historyList');
+  const empty = document.getElementById('emptyMsg');
+
+  try {
+    const res = await fetch('/api/history');
+    const runs = await res.json();
+
+    if (!runs.length) {
+      empty.style.display = 'block';
+      return;
+    }
+
+    list.innerHTML = '';
+    for (const run of runs) {
+      const li = document.createElement('li');
+      li.className = 'history-item';
+      li.onclick = () => loadDetail(run.id);
+
+      const date = new Date(run.created_at);
+      const dateStr = date.toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+
+      li.innerHTML = `
+        <div class="history-item-task">${esc(run.task)}</div>
+        <div class="history-item-date">${dateStr}</div>
+      `;
+      list.appendChild(li);
+    }
+  } catch {
+    empty.textContent = 'Failed to load history.';
+    empty.style.display = 'block';
+  }
+}
+
+async function loadDetail(runId) {
+  document.getElementById('listView').style.display = 'none';
+  const detail = document.getElementById('detailView');
+  detail.style.display = 'block';
+
+  try {
+    const res = await fetch(`/api/history/${runId}`);
+    const run = await res.json();
+
+    document.getElementById('detailTask').textContent = run.task;
+
+    const date = new Date(run.created_at);
+    document.getElementById('detailDate').textContent = date.toLocaleDateString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+
+    const container = document.getElementById('detailResults');
+    container.innerHTML = '';
+
+    const results = run.results || {};
+    const order = [
+      'ResearchAgent', 'AnalysisAgent', 'ProductAgent',
+      'MarketingAgent', 'ArchitectAgent', 'CodeAgent',
+      'PitchAgent', 'DocumentAgent',
+    ];
+
+    for (const name of order) {
+      const output = results[name];
+      if (!output) continue;
+
+      const label = AGENT_LABELS[name] || name;
+      const block = document.createElement('div');
+      block.className = 'result-block';
+
+      const h3 = document.createElement('h3');
+      h3.textContent = label;
+
+      const content = document.createElement('div');
+      content.className = 'result-content';
+
+      const formatted = document.createElement('div');
+      formatted.className = 'formatted-output';
+
+      if (output.error) {
+        formatted.innerHTML = `<p style="color:var(--error);">${esc(output.error)}</p>`;
+      } else {
+        formatted.innerHTML = formatAgentOutput(name, output);
+      }
+      content.appendChild(formatted);
+
+      h3.onclick = () => {
+        h3.classList.toggle('open');
+        content.classList.toggle('open');
+      };
+
+      block.appendChild(h3);
+      block.appendChild(content);
+      container.appendChild(block);
+    }
+
+    // Show timings
+    if (run.timings) {
+      const footer = document.createElement('div');
+      footer.className = 'timing-footer';
+      let lines = [];
+      for (const name of order) {
+        const t = run.timings[name];
+        if (t) lines.push(`${AGENT_LABELS[name] || name} \u00b7 ${Number(t).toFixed(1)}s`);
+      }
+      footer.textContent = lines.join('\n');
+      container.appendChild(footer);
+    }
+  } catch {
+    document.getElementById('detailResults').innerHTML = '<p class="history-empty">Failed to load run details.</p>';
+  }
+}
+
+function showList() {
+  document.getElementById('detailView').style.display = 'none';
+  document.getElementById('listView').style.display = 'block';
+}
+
+loadHistory();
+</script>
+</body>
+</html>

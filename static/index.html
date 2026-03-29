@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A2A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="/" class="nav-brand">A2A</a>
+  <a href="/history" class="nav-link">History</a>
+</nav>
+
+<div class="container">
+
+  <section class="hero" id="hero">
+    <p class="brand">Agent to Agent</p>
+    <h1>Describe your startup idea.<br><em>Eight agents will build it.</em></h1>
+    <div class="input-area">
+      <textarea id="taskInput" placeholder="An AI-powered platform that..." rows="2" oninput="onInput()"></textarea>
+      <div class="submit-row" id="submitRow">
+        <div class="tier-row">
+          <div class="tier-switch" id="tierSwitch">
+            <button class="tier-btn active" data-tier="premium" onclick="switchTier('premium')">Premium</button>
+            <button class="tier-btn" data-tier="standard" onclick="switchTier('standard')">Standard</button>
+          </div>
+          <span class="tier-hint" id="tierHint">Best-in-class output quality</span>
+        </div>
+        <span class="hint">Eight specialized AI agents will collaborate to produce your startup blueprint.</span>
+        <button class="submit-btn" id="submitBtn" onclick="startPipeline()">Begin</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="pipeline" id="pipeline">
+    <div class="pipeline-header">
+      <h2>Agents</h2>
+      <span class="pipeline-status" id="pipelineStatus"></span>
+    </div>
+    <ul class="agent-list" id="agentList"></ul>
+
+    <div class="results-section" id="resultsSection">
+      <h2>Outputs</h2>
+      <div id="resultsContainer"></div>
+      <div class="timing-footer" id="timingFooter"></div>
+    </div>
+
+    <div class="restart-row" id="restartRow" style="display:none;">
+      <button class="submit-btn" onclick="resetPipeline()">Run Again</button>
+    </div>
+  </section>
+
+</div>
+
+<footer class="site-footer">&copy; 2026 Agent to Agent. All rights reserved.</footer>
+
+<script src="/static/format.js"></script>
+<script>
+let agentOrder = [];
+let completedCount = 0;
+let totalAgents = 0;
+let startTime = 0;
+let elapsedTimer = null;
+
+function onInput() {
+  const val = document.getElementById('taskInput').value.trim();
+  document.getElementById('submitRow').classList.toggle('visible', val.length > 10);
+}
+
+function resetPipeline() {
+  document.getElementById('hero').classList.remove('collapsed');
+  document.getElementById('taskInput').readOnly = false;
+  document.getElementById('taskInput').value = '';
+  document.getElementById('submitBtn').disabled = false;
+  document.getElementById('submitRow').classList.remove('visible');
+  document.getElementById('pipeline').classList.remove('visible');
+  document.getElementById('resultsSection').classList.remove('visible');
+  document.getElementById('restartRow').style.display = 'none';
+  document.getElementById('agentList').innerHTML = '';
+  document.getElementById('resultsContainer').innerHTML = '';
+  document.getElementById('timingFooter').textContent = '';
+  document.getElementById('pipelineStatus').textContent = '';
+  agentOrder = [];
+  completedCount = 0;
+  totalAgents = 0;
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  document.getElementById('taskInput').focus();
+}
+
+async function startPipeline() {
+  const input = document.getElementById('taskInput').value.trim();
+  if (!input || input.length < 10) return;
+
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('hero').classList.add('collapsed');
+  document.getElementById('taskInput').readOnly = true;
+  document.getElementById('restartRow').style.display = 'none';
+  startTime = Date.now();
+  document.getElementById('pipeline').classList.add('visible');
+
+  // Live elapsed timer
+  elapsedTimer = setInterval(() => {
+    if (completedCount > 0 && completedCount < totalAgents) {
+      const el = document.getElementById('pipelineStatus');
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+      el.textContent = `${completedCount} of ${totalAgents} \u00b7 ${elapsed}s`;
+    }
+  }, 1000);
+
+  try {
+    const response = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: input }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Request failed' }));
+      document.getElementById('pipelineStatus').textContent = err.error || 'Error';
+      onFinished();
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          try { handleEvent(JSON.parse(trimmed.slice(6))); } catch {}
+        }
+      }
+    }
+
+    // Stream ended — if pipeline_done wasn't received, show warning
+    if (completedCount < totalAgents && completedCount > 0) {
+      document.getElementById('pipelineStatus').textContent = `interrupted \u00b7 ${completedCount} of ${totalAgents} completed`;
+    }
+  } catch {
+    document.getElementById('pipelineStatus').textContent = 'Connection error — check server';
+  }
+
+  onFinished();
+}
+
+function onFinished() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  document.getElementById('restartRow').style.display = 'block';
+}
+
+function handleEvent(msg) {
+  switch (msg.type) {
+    case 'pipeline_start': initAgentList(msg.agents); break;
+    case 'agent_start': setAgentState(msg.agent, 'working'); break;
+    case 'agent_done': setAgentState(msg.agent, 'done', msg.elapsed, msg.data); break;
+    case 'agent_error': setAgentState(msg.agent, 'error', null, null, msg.error); break;
+    case 'pipeline_done': onPipelineDone(msg.data); break;
+    case 'error':
+      document.getElementById('pipelineStatus').textContent = (msg.error || 'Error').slice(0, 150);
+      onFinished();
+      break;
+  }
+}
+
+function initAgentList(agents) {
+  const list = document.getElementById('agentList');
+  list.innerHTML = '';
+  agentOrder = agents.map(a => a.name);
+  totalAgents = agents.length;
+  completedCount = 0;
+
+  agents.forEach((agent, i) => {
+    const li = document.createElement('li');
+    li.className = 'agent-item pending';
+    li.id = `agent-${agent.name}`;
+    li.style.animationDelay = `${i * 0.08}s`;
+    const reason = agent.model_reason ? `<span class="agent-model-reason">${agent.model_reason}</span>` : '';
+    li.innerHTML = `
+      <div class="agent-row">
+        <span class="agent-name">${agent.label}</span>
+        <span class="agent-meta" id="meta-${agent.name}">queued</span>
+      </div>
+      <div class="agent-desc">${agent.description}</div>
+      <div class="agent-model-row">
+        <span class="agent-model">${agent.model}</span>
+        ${reason}
+      </div>
+      <div class="agent-status-text" id="status-${agent.name}"></div>
+    `;
+    list.appendChild(li);
+  });
+  updatePipelineStatus();
+}
+
+function setAgentState(name, state, elapsed, data, error) {
+  const item = document.getElementById(`agent-${name}`);
+  if (!item) return;
+  item.className = `agent-item ${state}`;
+  const meta = document.getElementById(`meta-${name}`);
+  const statusText = document.getElementById(`status-${name}`);
+
+  if (state === 'working') {
+    meta.textContent = 'running';
+    statusText.textContent = 'Processing';
+  } else if (state === 'done') {
+    completedCount++;
+    meta.textContent = elapsed ? `${elapsed}s` : 'done';
+    statusText.textContent = 'Complete';
+  } else if (state === 'error') {
+    completedCount++;
+    meta.textContent = 'failed';
+    statusText.textContent = (error || 'Failed').slice(0, 150);
+  }
+  updatePipelineStatus();
+}
+
+function updatePipelineStatus() {
+  const el = document.getElementById('pipelineStatus');
+  if (completedCount === 0) el.textContent = 'initializing';
+  else if (completedCount < totalAgents) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    el.textContent = `${completedCount} of ${totalAgents} \u00b7 ${elapsed}s`;
+  } else {
+    el.textContent = `complete \u00b7 ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+  }
+}
+
+let currentTier = 'premium';
+
+async function switchTier(tier) {
+  try {
+    const res = await fetch('/api/tier', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tier }),
+    });
+    if (!res.ok) return;
+    const info = await res.json();
+    currentTier = info.current;
+    document.querySelectorAll('.tier-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tier === currentTier);
+    });
+    const hints = { premium: 'Best-in-class output quality', standard: 'Fast and cost-effective' };
+    document.getElementById('tierHint').textContent = hints[currentTier] || '';
+  } catch {}
+}
+
+function onPipelineDone(data) {
+  const section = document.getElementById('resultsSection');
+  section.classList.add('visible');
+  const container = document.getElementById('resultsContainer');
+  container.innerHTML = '';
+
+  const results = data?.results || {};
+  const timings = data?.timings || {};
+
+  for (const name of agentOrder) {
+    const output = results[name];
+    if (!output) continue;
+
+    const label = AGENT_LABELS[name] || name;
+    const block = document.createElement('div');
+    block.className = 'result-block';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = label;
+
+    const content = document.createElement('div');
+    content.className = 'result-content';
+
+    if (output.error) {
+      const errDiv = document.createElement('div');
+      errDiv.className = 'formatted-output';
+      errDiv.innerHTML = `<p style="color:var(--error);">${esc(output.error)}</p>`;
+      content.appendChild(errDiv);
+    } else {
+      const formatted = document.createElement('div');
+      formatted.className = 'formatted-output';
+      formatted.innerHTML = formatAgentOutput(name, output);
+      content.appendChild(formatted);
+    }
+
+    h3.onclick = () => {
+      h3.classList.toggle('open');
+      content.classList.toggle('open');
+    };
+
+    block.appendChild(h3);
+    block.appendChild(content);
+    container.appendChild(block);
+  }
+
+  const footer = document.getElementById('timingFooter');
+  const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  let lines = [`Total pipeline \u00b7 ${totalTime}s\n`];
+  for (const name of agentOrder) {
+    const t = timings[name];
+    if (t) lines.push(`${AGENT_LABELS[name] || name} \u00b7 ${Number(t).toFixed(1)}s`);
+  }
+  footer.textContent = lines.join('\n');
+
+  onFinished();
+}
+</script>
+</body>
+</html>
